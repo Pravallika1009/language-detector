@@ -4,36 +4,38 @@ import requests
 
 app = FastAPI()
 
-# =====================================
+# =========================================
 # REQUEST MODEL
-# =====================================
+# =========================================
 class Track(BaseModel):
     title: str
     artist: str
     album: str = ""
 
-# =====================================
-# GLOBAL LANGUAGE KEYWORDS
-# =====================================
+# =========================================
+# LANGUAGE KEYWORDS
+# =========================================
 LANGUAGE_KEYWORDS = {
 
-    "English": [
-        "english"
+    "Telugu": [
+        "telugu",
+        "tollywood",
+        "telugu song",
+        "telugu lyrics",
+        "telugu movie"
     ],
 
     "Hindi": [
         "hindi",
-        "bollywood"
-    ],
-
-    "Telugu": [
-        "telugu",
-        "tollywood"
+        "bollywood",
+        "hindi song",
+        "hindi lyrics"
     ],
 
     "Tamil": [
         "tamil",
-        "kollywood"
+        "kollywood",
+        "tamil song"
     ],
 
     "Malayalam": [
@@ -48,9 +50,13 @@ LANGUAGE_KEYWORDS = {
         "punjabi"
     ],
 
+    "English": [
+        "english",
+        "english song"
+    ],
+
     "Spanish": [
         "spanish",
-        "español",
         "latin"
     ],
 
@@ -60,7 +66,7 @@ LANGUAGE_KEYWORDS = {
 
     "Japanese": [
         "japanese",
-        "anime"
+        "anime song"
     ],
 
     "Korean": [
@@ -69,19 +75,9 @@ LANGUAGE_KEYWORDS = {
     ]
 }
 
-# =====================================
-# HOME ROUTE
-# =====================================
-@app.get("/")
-def home():
-
-    return {
-        "message": "Language Detector Running"
-    }
-
-# =====================================
-# SEARCH HELPER
-# =====================================
+# =========================================
+# FETCH PAGE
+# =========================================
 def fetch_page(url):
 
     headers = {
@@ -102,63 +98,70 @@ def fetch_page(url):
 
         return ""
 
-# =====================================
-# DETECT ROUTE
-# =====================================
+# =========================================
+# HOME
+# =========================================
+@app.get("/")
+def home():
+
+    return {
+        "message": "AI Language Detector Running"
+    }
+
+# =========================================
+# DETECT LANGUAGE
+# =========================================
 @app.post("/detect")
 def detect(track: Track):
 
-    title = track.title
-    artist = track.artist
-    album = track.album
+    title = track.title.lower()
+    artist = track.artist.lower()
+    album = track.album.lower()
 
     print("\n====================")
-    print("TRACK INFO")
+    print("TRACK")
     print("====================")
-    print(title)
-    print(artist)
-    print(album)
+    print(title, artist, album)
 
-    # =================================
-    # SEARCH URLs
-    # =================================
-    search_urls = [
+    # =====================================
+    # SEARCH URLS
+    # =====================================
+    urls = [
 
-        f"https://genius.com/search?q={title}%20{artist}",
+        f"https://genius.com/search?q={title}+{artist}",
 
         f"https://www.jiosaavn.com/search/{title}",
 
         f"https://gaana.com/search/{title}",
 
-        f"https://music.apple.com/us/search?term={title}",
+        f"https://open.spotify.com/search/{title}",
 
-        f"https://open.spotify.com/search/{title}"
+        f"https://music.apple.com/us/search?term={title}"
     ]
 
     combined_html = ""
 
-    # =================================
-    # FETCH ALL PAGES
-    # =================================
-    for url in search_urls:
-
-        print("\nFetching:", url)
+    # =====================================
+    # FETCH HTML
+    # =====================================
+    for url in urls:
 
         html = fetch_page(url)
 
         combined_html += html
 
-    # =================================
-    # DEBUG
-    # =================================
-    print("\n====================")
-    print("HTML LENGTH")
-    print("====================")
-    print(len(combined_html))
+    # =====================================
+    # ADD TRACK CONTEXT
+    # =====================================
+    combined_html += f"""
+    {title}
+    {artist}
+    {album}
+    """
 
-    # =================================
-    # LANGUAGE SCORING
-    # =================================
+    # =====================================
+    # SCORING
+    # =====================================
     scores = {}
 
     for language, keywords in LANGUAGE_KEYWORDS.items():
@@ -169,7 +172,32 @@ def detect(track: Track):
 
             occurrences = combined_html.count(keyword)
 
-            score += occurrences
+            # weighted scoring
+            score += occurrences * 5
+
+        # =================================
+        # STRONG ALBUM MATCH BONUS
+        # =================================
+        if language.lower() in album:
+            score += 100
+
+        # =================================
+        # STRONG TITLE MATCH BONUS
+        # =================================
+        if f"{language.lower()} song" in combined_html:
+            score += 80
+
+        # =================================
+        # MOVIE INDUSTRY BONUS
+        # =================================
+        if language == "Telugu" and "tollywood" in combined_html:
+            score += 60
+
+        if language == "Hindi" and "bollywood" in combined_html:
+            score += 60
+
+        if language == "Tamil" and "kollywood" in combined_html:
+            score += 60
 
         scores[language] = score
 
@@ -178,53 +206,47 @@ def detect(track: Track):
     print("====================")
     print(scores)
 
-    # =================================
+    # =====================================
     # DETECT LANGUAGE
-    # =================================
-    max_score = max(scores.values())
+    # =====================================
+    detected_language = max(
+        scores,
+        key=scores.get
+    )
 
-    if max_score == 0:
+    highest_score = scores[detected_language]
 
-        detected_language = "Unknown"
+    total_score = sum(scores.values())
 
-    else:
-
-        detected_language = max(
-            scores,
-            key=scores.get
-        )
-
-    # =================================
+    # =====================================
     # CONFIDENCE
-    # =================================
-    total = sum(scores.values())
-
-    if total == 0:
+    # =====================================
+    if total_score == 0:
 
         confidence = 0
 
     else:
 
         confidence = round(
-            (max_score / total) * 100,
+            (highest_score / total_score) * 100,
             2
         )
 
     print("\n====================")
-    print("FINAL RESULT")
+    print("FINAL")
     print("====================")
     print(detected_language)
 
-    # =================================
+    # =====================================
     # RETURN
-    # =================================
+    # =====================================
     return {
 
-        "track": title,
+        "track": track.title,
 
-        "artist": artist,
+        "artist": track.artist,
 
-        "album": album,
+        "album": track.album,
 
         "language": detected_language,
 
