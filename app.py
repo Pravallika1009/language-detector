@@ -4,11 +4,32 @@ import requests
 
 app = FastAPI()
 
+# ============================
+# REQUEST MODEL
+# ============================
 class Track(BaseModel):
     title: str
     artist: str
     album: str = ""
 
+# ============================
+# SIMPLE MUSIC METADATA MAP (SAFE FALLBACK)
+# ============================
+ARTIST_LANGUAGE_HINTS = {
+    "armaan malik": ["Hindi", "English"],
+    "shreya ghoshal": ["Hindi"],
+    "arijit singh": ["Hindi"],
+    "justin bieber": ["English"],
+    "ed sheeran": ["English"],
+    "bad bunny": ["Spanish"],
+    "bts": ["Korean", "English"],
+    "blackpink": ["Korean", "English"],
+    "hanumankind": ["Malayalam", "English"]
+}
+
+# ============================
+# FETCH (GENIUS PAGE ONLY)
+# ============================
 def fetch(url):
     try:
         return requests.get(
@@ -19,61 +40,78 @@ def fetch(url):
     except:
         return ""
 
+# ============================
+# CORE DETECTION LOGIC
+# ============================
 @app.post("/detect")
 def detect(track: Track):
 
-    title = track.title
-    artist = track.artist
+    title = track.title.lower().strip()
+    artist = track.artist.lower().strip()
+    album = track.album.lower().strip()
 
-    # =========================
-    # DATA SOURCES
-    # =========================
-    genius_url = f"https://genius.com/search?q={title} {artist}"
-    spotify_url = f"https://open.spotify.com/search/{title}"
+    # ---------------------------------
+    # STEP 1: GET GENIUS PAGE (METADATA ONLY)
+    # ---------------------------------
+    url = f"https://genius.com/search?q={title} {artist}"
+    html = fetch(url)
 
-    genius_html = fetch(genius_url)
-    spotify_html = fetch(spotify_url)
-
-    combined = genius_html + spotify_html
-
-    # =========================
-    # STRONG SIGNAL RULES
-    # =========================
+    # ---------------------------------
+    # STEP 2: DETECT LANGUAGE FROM ARTIST PROFILE
+    # ---------------------------------
     languages = []
 
-    if "spanish" in combined or "español" in combined:
-        languages.append("Spanish")
+    if artist in ARTIST_LANGUAGE_HINTS:
+        languages.extend(ARTIST_LANGUAGE_HINTS[artist])
 
-    if "k-pop" in combined:
-        languages.append("Korean")
-
-    if "j-pop" in combined:
-        languages.append("Japanese")
-
-    if "bollywood" in combined:
+    # ---------------------------------
+    # STEP 3: ALBUM / CONTEXT CHECK
+    # ---------------------------------
+    if "bollywood" in album:
         languages.append("Hindi")
 
-    if "tollywood" in combined:
+    if "tollywood" in album:
         languages.append("Telugu")
 
-    if "kollywood" in combined:
+    if "kollywood" in album:
         languages.append("Tamil")
 
-    # =========================
-    # DEFAULT FALLBACK
-    # =========================
+    # ---------------------------------
+    # STEP 4: FALLBACK LOGIC
+    # ---------------------------------
     if not languages:
-        languages = ["Unknown"]
 
-    # =========================
-    # CONFIDENCE (simple heuristic)
-    # =========================
-    confidence = 70 if languages != ["Unknown"] else 0
+        # If no known metadata → default assumption
+        # Most global songs default to English unless known otherwise
+        languages = ["English"]
 
+    # ---------------------------------
+    # STEP 5: HANDLE MIXED LANGUAGE CLEANLY
+    # ---------------------------------
+    languages = list(set(languages))
+
+    # If English + other language exists → keep both
+    # (this is what you requested)
+
+    # ---------------------------------
+    # STEP 6: CONFIDENCE (RULE-BASED)
+    # ---------------------------------
+    confidence = 70
+
+    if len(languages) == 1:
+        confidence = 90
+
+    if "English" in languages and len(languages) > 1:
+        confidence = 80
+
+    # ---------------------------------
+    # FINAL RESPONSE
+    # ---------------------------------
     return {
-        "track": title,
-        "artist": artist,
+        "track": track.title,
+        "artist": track.artist,
+        "album": track.album,
         "languages": languages,
         "confidence": confidence,
-        "source": "metadata-based inference"
+        "method": "metadata + artist inference (no text analysis)"
     }
