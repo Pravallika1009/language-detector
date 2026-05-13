@@ -4,102 +4,21 @@ import requests
 
 app = FastAPI()
 
-# ==========================================
+# =====================================
 # REQUEST MODEL
-# ==========================================
+# =====================================
 class Track(BaseModel):
     title: str
     artist: str
     album: str = ""
 
-# ==========================================
+# =====================================
 # GLOBAL LANGUAGE KEYWORDS
-# ==========================================
+# =====================================
 LANGUAGE_KEYWORDS = {
 
     "English": [
-        "english",
-        "english song",
-        "english lyrics"
-    ],
-
-    "Spanish": [
-        "spanish",
-        "español",
-        "latin pop",
-        "reggaeton"
-    ],
-
-    "French": [
-        "french",
-        "français",
-        "french song"
-    ],
-
-    "German": [
-        "german",
-        "deutsch"
-    ],
-
-    "Italian": [
-        "italian",
-        "italiano"
-    ],
-
-    "Portuguese": [
-        "portuguese",
-        "português",
-        "brazilian music"
-    ],
-
-    "Russian": [
-        "russian",
-        "русский"
-    ],
-
-    "Japanese": [
-        "japanese",
-        "j-pop",
-        "anime song"
-    ],
-
-    "Korean": [
-        "korean",
-        "k-pop"
-    ],
-
-    "Chinese": [
-        "chinese",
-        "mandarin",
-        "c-pop"
-    ],
-
-    "Arabic": [
-        "arabic",
-        "arab music"
-    ],
-
-    "Turkish": [
-        "turkish",
-        "türkçe"
-    ],
-
-    "Indonesian": [
-        "indonesian",
-        "bahasa indonesia"
-    ],
-
-    "Thai": [
-        "thai",
-        "thai song"
-    ],
-
-    "Vietnamese": [
-        "vietnamese"
-    ],
-
-    "Punjabi": [
-        "punjabi"
+        "english"
     ],
 
     "Hindi": [
@@ -125,72 +44,45 @@ LANGUAGE_KEYWORDS = {
         "kannada"
     ],
 
-    "Bengali": [
-        "bengali"
+    "Punjabi": [
+        "punjabi"
     ],
 
-    "Marathi": [
-        "marathi"
+    "Spanish": [
+        "spanish",
+        "español",
+        "latin"
     ],
 
-    "Gujarati": [
-        "gujarati"
+    "French": [
+        "french"
     ],
 
-    "Urdu": [
-        "urdu"
+    "Japanese": [
+        "japanese",
+        "anime"
     ],
 
-    "Nepali": [
-        "nepali"
-    ],
-
-    "Sinhala": [
-        "sinhala"
-    ],
-
-    "African": [
-        "afrobeats",
-        "nigerian music",
-        "african song"
+    "Korean": [
+        "korean",
+        "k-pop"
     ]
 }
 
-# ==========================================
+# =====================================
 # HOME ROUTE
-# ==========================================
+# =====================================
 @app.get("/")
 def home():
 
     return {
-        "message": "Global Language Detector API Running"
+        "message": "Language Detector Running"
     }
 
-# ==========================================
-# DETECT LANGUAGE ROUTE
-# ==========================================
-@app.post("/detect")
-def detect(track: Track):
-
-    # --------------------------------------
-    # CREATE SEARCH QUERY
-    # --------------------------------------
-    query = f"""
-    {track.title}
-    {track.artist}
-    {track.album}
-    song language
-    """
-
-    print("\n==========================")
-    print("SEARCH QUERY")
-    print("==========================")
-    print(query)
-
-    # --------------------------------------
-    # DUCKDUCKGO SEARCH
-    # --------------------------------------
-    url = f"https://html.duckduckgo.com/html/?q={query}"
+# =====================================
+# SEARCH HELPER
+# =====================================
+def fetch_page(url):
 
     headers = {
         "User-Agent": "Mozilla/5.0"
@@ -204,101 +96,139 @@ def detect(track: Track):
             timeout=10
         )
 
-        html = response.text.lower()
+        return response.text.lower()
 
-        print("\n==========================")
-        print("HTML PREVIEW")
-        print("==========================")
-        print(html[:1500])
+    except:
 
-        # --------------------------------------
-        # LANGUAGE SCORING
-        # --------------------------------------
-        scores = {}
+        return ""
 
-        for language, keywords in LANGUAGE_KEYWORDS.items():
+# =====================================
+# DETECT ROUTE
+# =====================================
+@app.post("/detect")
+def detect(track: Track):
 
-            score = 0
+    title = track.title
+    artist = track.artist
+    album = track.album
 
-            for keyword in keywords:
+    print("\n====================")
+    print("TRACK INFO")
+    print("====================")
+    print(title)
+    print(artist)
+    print(album)
 
-                occurrences = html.count(keyword)
+    # =================================
+    # SEARCH URLs
+    # =================================
+    search_urls = [
 
-                score += occurrences
+        f"https://genius.com/search?q={title}%20{artist}",
 
-            scores[language] = score
+        f"https://www.jiosaavn.com/search/{title}",
 
-        print("\n==========================")
-        print("LANGUAGE SCORES")
-        print("==========================")
-        print(scores)
+        f"https://gaana.com/search/{title}",
 
-        # --------------------------------------
-        # FIND BEST MATCH
-        # --------------------------------------
-        max_score = max(scores.values())
+        f"https://music.apple.com/us/search?term={title}",
 
-        if max_score == 0:
+        f"https://open.spotify.com/search/{title}"
+    ]
 
-            detected_language = "Unknown"
+    combined_html = ""
 
-        else:
+    # =================================
+    # FETCH ALL PAGES
+    # =================================
+    for url in search_urls:
 
-            detected_language = max(
-                scores,
-                key=scores.get
-            )
+        print("\nFetching:", url)
 
-        # --------------------------------------
-        # CONFIDENCE CALCULATION
-        # --------------------------------------
-        total_score = sum(scores.values())
+        html = fetch_page(url)
 
-        if total_score == 0:
+        combined_html += html
 
-            confidence = 0
+    # =================================
+    # DEBUG
+    # =================================
+    print("\n====================")
+    print("HTML LENGTH")
+    print("====================")
+    print(len(combined_html))
 
-        else:
+    # =================================
+    # LANGUAGE SCORING
+    # =================================
+    scores = {}
 
-            confidence = round(
-                (max_score / total_score) * 100,
-                2
-            )
+    for language, keywords in LANGUAGE_KEYWORDS.items():
 
-        print("\n==========================")
-        print("FINAL RESULT")
-        print("==========================")
-        print("Language:", detected_language)
-        print("Confidence:", confidence)
+        score = 0
 
-        # --------------------------------------
-        # RETURN RESPONSE
-        # --------------------------------------
-        return {
+        for keyword in keywords:
 
-            "track": track.title,
+            occurrences = combined_html.count(keyword)
 
-            "artist": track.artist,
+            score += occurrences
 
-            "album": track.album,
+        scores[language] = score
 
-            "language": detected_language,
+    print("\n====================")
+    print("SCORES")
+    print("====================")
+    print(scores)
 
-            "confidence": confidence,
+    # =================================
+    # DETECT LANGUAGE
+    # =================================
+    max_score = max(scores.values())
 
-            "scores": scores
-        }
+    if max_score == 0:
 
-    except Exception as e:
+        detected_language = "Unknown"
 
-        print("\n==========================")
-        print("ERROR")
-        print("==========================")
-        print(str(e))
+    else:
 
-        return {
+        detected_language = max(
+            scores,
+            key=scores.get
+        )
 
-            "language": "Error",
+    # =================================
+    # CONFIDENCE
+    # =================================
+    total = sum(scores.values())
 
-            "message": str(e)
-        }
+    if total == 0:
+
+        confidence = 0
+
+    else:
+
+        confidence = round(
+            (max_score / total) * 100,
+            2
+        )
+
+    print("\n====================")
+    print("FINAL RESULT")
+    print("====================")
+    print(detected_language)
+
+    # =================================
+    # RETURN
+    # =================================
+    return {
+
+        "track": title,
+
+        "artist": artist,
+
+        "album": album,
+
+        "language": detected_language,
+
+        "confidence": confidence,
+
+        "scores": scores
+    }
