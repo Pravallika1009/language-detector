@@ -4,253 +4,76 @@ import requests
 
 app = FastAPI()
 
-# =========================================
-# REQUEST MODEL
-# =========================================
 class Track(BaseModel):
     title: str
     artist: str
     album: str = ""
 
-# =========================================
-# LANGUAGE KEYWORDS
-# =========================================
-LANGUAGE_KEYWORDS = {
-
-    "Telugu": [
-        "telugu",
-        "tollywood",
-        "telugu song",
-        "telugu lyrics",
-        "telugu movie"
-    ],
-
-    "Hindi": [
-        "hindi",
-        "bollywood",
-        "hindi song",
-        "hindi lyrics"
-    ],
-
-    "Tamil": [
-        "tamil",
-        "kollywood",
-        "tamil song"
-    ],
-
-    "Malayalam": [
-        "malayalam"
-    ],
-
-    "Kannada": [
-        "kannada"
-    ],
-
-    "Punjabi": [
-        "punjabi"
-    ],
-
-    "English": [
-        "english",
-        "english song"
-    ],
-
-    "Spanish": [
-        "spanish",
-        "latin"
-    ],
-
-    "French": [
-        "french"
-    ],
-
-    "Japanese": [
-        "japanese",
-        "anime song"
-    ],
-
-    "Korean": [
-        "korean",
-        "k-pop"
-    ]
-}
-
-# =========================================
-# FETCH PAGE
-# =========================================
-def fetch_page(url):
-
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
-
+def fetch(url):
     try:
-
-        response = requests.get(
+        return requests.get(
             url,
-            headers=headers,
+            headers={"User-Agent": "Mozilla/5.0"},
             timeout=10
-        )
-
-        return response.text.lower()
-
+        ).text.lower()
     except:
-
         return ""
 
-# =========================================
-# HOME
-# =========================================
-@app.get("/")
-def home():
-
-    return {
-        "message": "AI Language Detector Running"
-    }
-
-# =========================================
-# DETECT LANGUAGE
-# =========================================
 @app.post("/detect")
 def detect(track: Track):
 
-    title = track.title.lower()
-    artist = track.artist.lower()
-    album = track.album.lower()
+    title = track.title
+    artist = track.artist
 
-    print("\n====================")
-    print("TRACK")
-    print("====================")
-    print(title, artist, album)
+    # =========================
+    # DATA SOURCES
+    # =========================
+    genius_url = f"https://genius.com/search?q={title} {artist}"
+    spotify_url = f"https://open.spotify.com/search/{title}"
 
-    # =====================================
-    # SEARCH URLS
-    # =====================================
-    urls = [
+    genius_html = fetch(genius_url)
+    spotify_html = fetch(spotify_url)
 
-        f"https://genius.com/search?q={title}+{artist}",
+    combined = genius_html + spotify_html
 
-        f"https://www.jiosaavn.com/search/{title}",
+    # =========================
+    # STRONG SIGNAL RULES
+    # =========================
+    languages = []
 
-        f"https://gaana.com/search/{title}",
+    if "spanish" in combined or "español" in combined:
+        languages.append("Spanish")
 
-        f"https://open.spotify.com/search/{title}",
+    if "k-pop" in combined:
+        languages.append("Korean")
 
-        f"https://music.apple.com/us/search?term={title}"
-    ]
+    if "j-pop" in combined:
+        languages.append("Japanese")
 
-    combined_html = ""
+    if "bollywood" in combined:
+        languages.append("Hindi")
 
-    # =====================================
-    # FETCH HTML
-    # =====================================
-    for url in urls:
+    if "tollywood" in combined:
+        languages.append("Telugu")
 
-        html = fetch_page(url)
+    if "kollywood" in combined:
+        languages.append("Tamil")
 
-        combined_html += html
+    # =========================
+    # DEFAULT FALLBACK
+    # =========================
+    if not languages:
+        languages = ["Unknown"]
 
-    # =====================================
-    # ADD TRACK CONTEXT
-    # =====================================
-    combined_html += f"""
-    {title}
-    {artist}
-    {album}
-    """
+    # =========================
+    # CONFIDENCE (simple heuristic)
+    # =========================
+    confidence = 70 if languages != ["Unknown"] else 0
 
-    # =====================================
-    # SCORING
-    # =====================================
-    scores = {}
-
-    for language, keywords in LANGUAGE_KEYWORDS.items():
-
-        score = 0
-
-        for keyword in keywords:
-
-            occurrences = combined_html.count(keyword)
-
-            # weighted scoring
-            score += occurrences * 5
-
-        # =================================
-        # STRONG ALBUM MATCH BONUS
-        # =================================
-        if language.lower() in album:
-            score += 100
-
-        # =================================
-        # STRONG TITLE MATCH BONUS
-        # =================================
-        if f"{language.lower()} song" in combined_html:
-            score += 80
-
-        # =================================
-        # MOVIE INDUSTRY BONUS
-        # =================================
-        if language == "Telugu" and "tollywood" in combined_html:
-            score += 60
-
-        if language == "Hindi" and "bollywood" in combined_html:
-            score += 60
-
-        if language == "Tamil" and "kollywood" in combined_html:
-            score += 60
-
-        scores[language] = score
-
-    print("\n====================")
-    print("SCORES")
-    print("====================")
-    print(scores)
-
-    # =====================================
-    # DETECT LANGUAGE
-    # =====================================
-    detected_language = max(
-        scores,
-        key=scores.get
-    )
-
-    highest_score = scores[detected_language]
-
-    total_score = sum(scores.values())
-
-    # =====================================
-    # CONFIDENCE
-    # =====================================
-    if total_score == 0:
-
-        confidence = 0
-
-    else:
-
-        confidence = round(
-            (highest_score / total_score) * 100,
-            2
-        )
-
-    print("\n====================")
-    print("FINAL")
-    print("====================")
-    print(detected_language)
-
-    # =====================================
-    # RETURN
-    # =====================================
     return {
-
-        "track": track.title,
-
-        "artist": track.artist,
-
-        "album": track.album,
-
-        "language": detected_language,
-
+        "track": title,
+        "artist": artist,
+        "languages": languages,
         "confidence": confidence,
-
-        "scores": scores
+        "source": "metadata-based inference"
     }
